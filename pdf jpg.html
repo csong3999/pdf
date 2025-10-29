@@ -1,0 +1,602 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>图片转PDF工具</title>
+  
+  <!-- 引入外部资源 -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link href="https://cdn.jsdelivr.net/npm/font-awesome@4.7.0/css/font-awesome.min.css" rel="stylesheet">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+  
+  <!-- Tailwind 配置 -->
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            primary: '#4F46E5',
+            secondary: '#10B981',
+            accent: '#EC4899',
+            neutral: '#1F2937'
+          },
+          fontFamily: {
+            inter: ['Inter', 'system-ui', 'sans-serif'],
+          },
+        },
+      }
+    }
+  </script>
+  
+  <!-- 自定义样式 -->
+  <style type="text/tailwindcss">
+    @layer utilities {
+      .content-auto {
+        content-visibility: auto;
+      }
+      .transition-transform-opacity {
+        transition-property: transform, opacity;
+      }
+      .image-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+        gap: 1.5rem;
+      }
+      .drop-highlight {
+        @apply border-primary bg-primary/5;
+      }
+    }
+  </style>
+</head>
+<body class="font-inter bg-gray-50 text-neutral min-h-screen flex flex-col">
+  <!-- 导航栏 -->
+  <header class="bg-white shadow-md sticky top-0 z-50 transition-all duration-300">
+    <div class="container mx-auto px-4 py-4 flex justify-between items-center">
+      <div class="flex items-center space-x-2">
+        <i class="fa fa-file-pdf-o text-accent text-2xl"></i>
+        <h1 class="text-xl md:text-2xl font-bold bg-gradient-to-r from-primary to-accent bg-clip-text text-transparent">图片转PDF工具</h1>
+      </div>
+      <div class="hidden md:flex items-center space-x-6">
+        <a href="#" class="text-gray-600 hover:text-primary transition-colors duration-300 flex items-center">
+          <i class="fa fa-question-circle mr-1"></i>帮助
+        </a>
+        <a href="#" class="text-gray-600 hover:text-primary transition-colors duration-300 flex items-center">
+          <i class="fa fa-info-circle mr-1"></i>关于
+        </a>
+      </div>
+      <button class="md:hidden text-gray-600 focus:outline-none" id="menuToggle">
+        <i class="fa fa-bars text-xl"></i>
+      </button>
+    </div>
+    <!-- 移动端菜单 -->
+    <div id="mobileMenu" class="hidden md:hidden bg-white px-4 py-2 shadow-lg animate-fadeIn">
+      <a href="#" class="block py-2 text-gray-600 hover:text-primary transition-colors duration-300">
+        <i class="fa fa-question-circle mr-1"></i>帮助
+      </a>
+      <a href="#" class="block py-2 text-gray-600 hover:text-primary transition-colors duration-300">
+        <i class="fa fa-info-circle mr-1"></i>关于
+      </a>
+    </div>
+  </header>
+
+  <!-- 主要内容区 -->
+  <main class="flex-grow container mx-auto px-4 py-8">
+    <!-- 介绍卡片 -->
+    <div class="bg-gradient-to-r from-primary/10 to-accent/10 rounded-2xl p-6 mb-8 shadow-sm transform hover:shadow-md transition-all duration-300">
+      <h2 class="text-xl font-bold mb-2">简单高效的图片转PDF解决方案</h2>
+      <p class="text-gray-600">上传图片，调整顺序，一键生成PDF文件。所有操作均在本地完成，保护您的隐私安全。</p>
+    </div>
+
+    <!-- 上传区域 -->
+    <div id="dropArea" class="border-2 border-dashed border-gray-300 rounded-2xl p-10 text-center mb-10 hover:border-primary transition-all duration-300 cursor-pointer bg-white shadow-sm">
+      <div class="max-w-md mx-auto">
+        <i class="fa fa-cloud-upload text-5xl text-gray-400 mb-4 hover:text-primary transition-colors duration-300"></i>
+        <h3 class="text-lg font-semibold mb-2">拖放图片到此处，或点击上传</h3>
+        <p class="text-gray-500 mb-2">支持 JPG, PNG, GIF 等常见图片格式</p>
+        <p class="text-gray-500 text-sm mb-6">按住Ctrl键可多选图片，按选择顺序排列</p>
+        <label class="inline-block bg-primary hover:bg-primary/90 text-white font-medium py-3 px-6 rounded-lg transition-all duration-300 shadow-md hover:shadow-lg transform hover:-translate-y-1">
+          <i class="fa fa-picture-o mr-2"></i>选择图片
+          <input type="file" id="fileInput" accept="image/*" multiple class="hidden">
+        </label>
+      </div>
+    </div>
+
+    <!-- 图片预览和排序区域 -->
+    <div id="previewSection" class="mb-10 hidden">
+      <div class="flex flex-wrap justify-between items-center mb-6 gap-4">
+        <div>
+          <h3 class="text-xl font-bold">图片顺序 <span class="text-sm font-normal text-gray-500">(当前按选择顺序排列，拖动可调整)</span></h3>
+          <p class="text-sm text-gray-500 mt-1">PDF将按以下顺序生成，序号表示在PDF中的页码</p>
+        </div>
+        <button id="clearAll" class="text-gray-500 hover:text-red-500 transition-colors duration-300 flex items-center px-3 py-1.5 rounded-md hover:bg-red-50">
+          <i class="fa fa-trash mr-1.5"></i> 清空所有
+        </button>
+      </div>
+      
+      <div id="imageContainer" class="image-grid">
+        <!-- 图片预览将在这里动态生成 -->
+      </div>
+    </div>
+
+    <!-- 操作按钮区域 -->
+    <div id="actionSection" class="flex flex-col sm:flex-row justify-center gap-4 mb-10 hidden">
+      <button id="generatePdf" class="bg-secondary hover:bg-secondary/90 text-white font-medium py-3 px-8 rounded-lg transition-all duration-300 shadow-md hover:shadow-lg flex items-center justify-center transform hover:-translate-y-1">
+        <i class="fa fa-file-pdf-o mr-2"></i>生成PDF
+      </button>
+      <button id="addMore" class="bg-gray-200 hover:bg-gray-300 text-gray-700 font-medium py-3 px-8 rounded-lg transition-all duration-300 shadow-md hover:shadow-lg flex items-center justify-center transform hover:-translate-y-1">
+        <i class="fa fa-plus mr-2"></i>添加更多图片
+      </button>
+    </div>
+
+    <!-- 加载状态 -->
+    <div id="loadingSection" class="flex flex-col items-center justify-center py-10 hidden">
+      <div class="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-primary mb-4"></div>
+      <p class="text-gray-600">正在生成PDF文件，请稍候...</p>
+    </div>
+
+    <!-- 成功提示 -->
+    <div id="successSection" class="bg-green-50 border border-green-200 rounded-lg p-6 flex items-center justify-center hidden animate-fadeIn">
+      <i class="fa fa-check-circle text-green-500 text-2xl mr-3"></i>
+      <div>
+        <h4 class="font-medium text-green-800">PDF生成成功！</h4>
+        <p class="text-green-700 text-sm">点击下方按钮下载您的PDF文件</p>
+      </div>
+    </div>
+
+    <!-- 下载按钮 -->
+    <div id="downloadSection" class="flex justify-center mb-10 hidden">
+      <a id="downloadLink" href="#" download="images-to-pdf.pdf" class="bg-accent hover:bg-accent/90 text-white font-medium py-3 px-8 rounded-lg transition-all duration-300 shadow-md hover:shadow-lg flex items-center justify-center transform hover:-translate-y-1">
+        <i class="fa fa-download mr-2"></i>下载PDF
+      </a>
+    </div>
+
+    <!-- 使用说明 -->
+    <div class="bg-white rounded-xl p-6 shadow-sm mb-10 transform hover:shadow-md transition-all duration-300">
+      <h3 class="text-lg font-bold mb-4">使用说明</h3>
+      <ol class="list-decimal list-inside space-y-2 text-gray-600">
+        <li>点击"选择图片"按钮，按住Ctrl键（或Cmd键）可多选图片，图片将按选择顺序排列</li>
+        <li>也可直接将图片拖放到上传区域，按拖放顺序排列</li>
+        <li>上传完成后，您可以拖动图片调整顺序，序号会自动更新</li>
+        <li>点击"生成PDF"按钮创建PDF文件，PDF页码与序号一致</li>
+        <li>生成完成后，点击"下载PDF"保存文件到您的设备</li>
+      </ol>
+    </div>
+  </main>
+
+  <!-- 页脚 -->
+  <footer class="bg-neutral text-white py-8">
+    <div class="container mx-auto px-4">
+      <div class="flex flex-col md:flex-row justify-between items-center">
+        <div class="mb-4 md:mb-0">
+          <div class="flex items-center space-x-2">
+            <i class="fa fa-file-pdf-o text-accent"></i>
+            <span class="font-bold">图片转PDF工具</span>
+          </div>
+          <p class="text-gray-400 text-sm mt-1">简单、高效、安全的图片转PDF解决方案</p>
+        </div>
+        <div class="flex space-x-6">
+          <a href="#" class="text-gray-400 hover:text-white transition-colors duration-300">
+            <i class="fa fa-github text-xl"></i>
+          </a>
+          <a href="#" class="text-gray-400 hover:text-white transition-colors duration-300">
+            <i class="fa fa-twitter text-xl"></i>
+          </a>
+          <a href="#" class="text-gray-400 hover:text-white transition-colors duration-300">
+            <i class="fa fa-envelope text-xl"></i>
+          </a>
+        </div>
+      </div>
+      <div class="border-t border-gray-700 mt-6 pt-6 text-center text-gray-400 text-sm">
+        &copy; 2023 图片转PDF工具 - 所有操作均在本地完成，保护您的隐私
+      </div>
+    </div>
+  </footer>
+
+  <!-- JavaScript 代码 -->
+  <script>
+    // 全局变量
+    const { jsPDF } = window.jspdf;
+    let images = [];
+    let isDragging = false;
+    let draggedItem = null;
+
+    // DOM 元素
+    const dropArea = document.getElementById('dropArea');
+    const fileInput = document.getElementById('fileInput');
+    const imageContainer = document.getElementById('imageContainer');
+    const previewSection = document.getElementById('previewSection');
+    const actionSection = document.getElementById('actionSection');
+    const generatePdfBtn = document.getElementById('generatePdf');
+    const clearAllBtn = document.getElementById('clearAll');
+    const addMoreBtn = document.getElementById('addMore');
+    const loadingSection = document.getElementById('loadingSection');
+    const successSection = document.getElementById('successSection');
+    const downloadSection = document.getElementById('downloadSection');
+    const downloadLink = document.getElementById('downloadLink');
+    const menuToggle = document.getElementById('menuToggle');
+    const mobileMenu = document.getElementById('mobileMenu');
+
+    // 移动端菜单切换
+    menuToggle.addEventListener('click', () => {
+      mobileMenu.classList.toggle('hidden');
+    });
+
+    // 上传区域点击触发文件选择
+    dropArea.addEventListener('click', () => {
+      if (!isDragging) {
+        fileInput.click();
+      }
+    });
+
+    // 处理文件选择 - 关键修改：确保按选择顺序处理
+    fileInput.addEventListener('change', handleFiles);
+
+    // 拖放事件处理
+    ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
+      dropArea.addEventListener(eventName, preventDefaults, false);
+    });
+
+    function preventDefaults(e) {
+      e.preventDefault();
+      e.stopPropagation();
+    }
+
+    ['dragenter', 'dragover'].forEach(eventName => {
+      dropArea.addEventListener(eventName, highlight, false);
+    });
+
+    ['dragleave', 'drop'].forEach(eventName => {
+      dropArea.addEventListener(eventName, unhighlight, false);
+    });
+
+    function highlight() {
+      dropArea.classList.add('drop-highlight');
+      isDragging = true;
+    }
+
+    function unhighlight() {
+      dropArea.classList.remove('drop-highlight');
+      isDragging = false;
+    }
+
+    // 处理拖放的文件 - 按拖放顺序处理
+    dropArea.addEventListener('drop', handleDrop, false);
+
+    function handleDrop(e) {
+      const dt = e.dataTransfer;
+      const files = dt.files;
+      handleFiles({ target: { files } });
+    }
+
+    // 处理上传的文件 - 核心修改：严格按照用户选择的顺序添加图片
+    function handleFiles(e) {
+      const files = e.target.files;
+      if (!files.length) return;
+
+      // 过滤出图片文件 - 保持原始选择顺序
+      const imageFiles = Array.from(files).filter(file => file.type.startsWith('image/'));
+      
+      if (imageFiles.length === 0) {
+        alert('请选择图片文件');
+        return;
+      }
+
+      // 按用户选择的顺序处理每个图片文件
+      imageFiles.forEach(file => {
+        const reader = new FileReader();
+        
+        reader.onload = function(e) {
+          // 添加到图片数组 - 保持选择顺序
+          images.push({
+            id: Date.now() + Math.random(), // 生成唯一ID
+            src: e.target.result,
+            file: file
+          });
+          
+          // 更新预览
+          updatePreview();
+          
+          // 显示操作区域
+          previewSection.classList.remove('hidden');
+          actionSection.classList.remove('hidden');
+          successSection.classList.add('hidden');
+          downloadSection.classList.add('hidden');
+          
+          // 添加动画效果
+          previewSection.classList.add('animate-fadeIn');
+          actionSection.classList.add('animate-fadeIn');
+        };
+        
+        reader.readAsDataURL(file);
+      });
+
+      // 重置fileInput，允许重复选择相同文件
+      fileInput.value = '';
+    }
+
+    // 更新图片预览 - 增强序号显示
+    function updatePreview() {
+      // 清空容器
+      imageContainer.innerHTML = '';
+      
+      // 添加所有图片，按当前顺序显示序号
+      images.forEach((image, index) => {
+        const imageCard = document.createElement('div');
+        imageCard.className = 'bg-white rounded-xl shadow-sm overflow-hidden hover:shadow-md transition-all duration-300 relative group border border-gray-100';
+        imageCard.dataset.id = image.id;
+        imageCard.draggable = true;
+        
+        // 排序索引 - 更醒目的序号显示
+        const indexBadge = document.createElement('div');
+        indexBadge.className = 'absolute top-2 left-2 bg-primary text-white font-bold rounded-full w-8 h-8 flex items-center justify-center z-10 shadow-md';
+        indexBadge.textContent = index + 1; // 序号从1开始，对应PDF页码
+        imageCard.appendChild(indexBadge);
+        
+        // 删除按钮
+        const deleteBtn = document.createElement('button');
+        deleteBtn.className = 'absolute top-2 right-2 bg-red-500/80 text-white rounded-full w-6 h-6 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all duration-300 z-10 hover:bg-red-600';
+        deleteBtn.innerHTML = '<i class="fa fa-times text-xs"></i>';
+        deleteBtn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          deleteImage(image.id);
+        });
+        imageCard.appendChild(deleteBtn);
+        
+        // 图片
+        const img = document.createElement('img');
+        img.src = image.src;
+        img.className = 'w-full h-48 object-cover';
+        img.alt = `第 ${index + 1} 页: ${image.file.name}`;
+        imageCard.appendChild(img);
+        
+        // 文件名和页码信息
+        const infoContainer = document.createElement('div');
+        infoContainer.className = 'p-3';
+        
+        const fileName = document.createElement('div');
+        fileName.className = 'text-sm text-gray-600 truncate';
+        fileName.textContent = image.file.name;
+        infoContainer.appendChild(fileName);
+        
+        const pageInfo = document.createElement('div');
+        pageInfo.className = 'text-xs text-gray-500 mt-1';
+        pageInfo.textContent = `PDF中为第 ${index + 1} 页`;
+        infoContainer.appendChild(pageInfo);
+        
+        imageCard.appendChild(infoContainer);
+        
+        // 拖拽事件
+        imageCard.addEventListener('dragstart', handleDragStart);
+        imageCard.addEventListener('dragover', handleDragOver);
+        imageCard.addEventListener('dragend', handleDragEnd);
+        imageCard.addEventListener('drop', handleImageDrop);
+        
+        imageContainer.appendChild(imageCard);
+      });
+    }
+
+    // 拖拽排序相关函数
+    function handleDragStart(e) {
+      draggedItem = this;
+      this.classList.add('opacity-50', 'scale-95');
+      e.dataTransfer.setData('text/plain', this.dataset.id);
+      
+      // 添加拖拽时的视觉反馈
+      setTimeout(() => {
+        this.classList.add('invisible');
+      }, 0);
+    }
+
+    function handleDragOver(e) {
+      if (e.preventDefault) {
+        e.preventDefault();
+      }
+      this.classList.add('border-primary', 'bg-primary/5');
+      return false;
+    }
+
+    function handleDragEnd() {
+      this.classList.remove('opacity-50', 'scale-95', 'invisible');
+      // 移除所有卡片的高亮
+      document.querySelectorAll('#imageContainer > div').forEach(card => {
+        card.classList.remove('border-primary', 'bg-primary/5');
+      });
+    }
+
+    function handleImageDrop(e) {
+      e.stopPropagation();
+      e.preventDefault();
+      
+      // 移除高亮
+      this.classList.remove('border-primary', 'bg-primary/5');
+      
+      if (draggedItem === this) return;
+      
+      const draggedId = e.dataTransfer.getData('text/plain');
+      const targetId = this.dataset.id;
+      
+      // 找到拖动项和目标项的索引
+      const draggedIndex = images.findIndex(img => img.id.toString() === draggedId);
+      const targetIndex = images.findIndex(img => img.id.toString() === targetId);
+      
+      // 调整数组顺序
+      const [removed] = images.splice(draggedIndex, 1);
+      images.splice(targetIndex, 0, removed);
+      
+      // 更新预览，重新计算序号
+      updatePreview();
+    }
+
+    // 删除图片
+    function deleteImage(id) {
+      // 找到要删除的图片索引
+      const index = images.findIndex(img => img.id === id);
+      if (index === -1) return;
+      
+      // 获取对应的DOM元素并添加删除动画
+      const imageCard = document.querySelector(`[data-id="${id}"]`);
+      if (imageCard) {
+        imageCard.classList.add('scale-90', 'opacity-0', 'transition-transform-opacity', 'duration-300');
+        
+        // 等待动画完成后再移除
+        setTimeout(() => {
+          images = images.filter(image => image.id !== id);
+          updatePreview();
+          
+          // 如果没有图片了，隐藏操作区域
+          if (images.length === 0) {
+            previewSection.classList.add('hidden');
+            actionSection.classList.add('hidden');
+            successSection.classList.add('hidden');
+            downloadSection.classList.add('hidden');
+          }
+        }, 300);
+      } else {
+        images = images.filter(image => image.id !== id);
+        updatePreview();
+        
+        if (images.length === 0) {
+          previewSection.classList.add('hidden');
+          actionSection.classList.add('hidden');
+          successSection.classList.add('hidden');
+          downloadSection.classList.add('hidden');
+        }
+      }
+    }
+
+    // 清空所有图片
+    clearAllBtn.addEventListener('click', () => {
+      if (images.length === 0) return;
+      
+      if (confirm('确定要清空所有图片吗？')) {
+        // 添加淡出动画
+        const imageCards = document.querySelectorAll('#imageContainer > div');
+        imageCards.forEach((card, index) => {
+          // 错开动画时间，创建级联效果
+          setTimeout(() => {
+            card.classList.add('scale-90', 'opacity-0', 'transition-transform-opacity', 'duration-300');
+          }, index * 50);
+        });
+        
+        // 等待所有动画完成
+        setTimeout(() => {
+          images = [];
+          updatePreview();
+          previewSection.classList.add('hidden');
+          actionSection.classList.add('hidden');
+          successSection.classList.add('hidden');
+          downloadSection.classList.add('hidden');
+        }, imageCards.length * 50 + 300);
+      }
+    });
+
+    // 添加更多图片
+    addMoreBtn.addEventListener('click', () => {
+      fileInput.click();
+    });
+
+    // 生成PDF
+    generatePdfBtn.addEventListener('click', generatePDF);
+
+    function generatePDF() {
+      if (images.length === 0) return;
+      
+      // 显示加载状态
+      loadingSection.classList.remove('hidden');
+      generatePdfBtn.disabled = true;
+      generatePdfBtn.classList.add('opacity-70', 'cursor-not-allowed');
+      
+      // 延迟执行，让加载状态显示出来
+      setTimeout(() => {
+        try {
+          // 创建PDF文档，设置为A4尺寸，纵向
+          const pdf = new jsPDF('p', 'mm', 'a4');
+          const a4Width = 210;
+          const a4Height = 297;
+          
+          images.forEach((image, index) => {
+            // 不是第一页的话，添加新页面
+            if (index > 0) {
+              pdf.addPage();
+            }
+            
+            // 获取图片尺寸
+            const img = new Image();
+            img.src = image.src;
+            
+            // 计算图片在PDF中的尺寸和位置，保持比例并适应页面
+            const imgWidth = img.width;
+            const imgHeight = img.height;
+            
+            // 计算缩放比例
+            const widthRatio = a4Width / imgWidth;
+            const heightRatio = a4Height / imgHeight;
+            const ratio = Math.min(widthRatio, heightRatio);
+            
+            const scaledWidth = imgWidth * ratio;
+            const scaledHeight = imgHeight * ratio;
+            
+            // 计算居中位置
+            const x = (a4Width - scaledWidth) / 2;
+            const y = (a4Height - scaledHeight) / 2;
+            
+            // 将图片添加到PDF
+            pdf.addImage(image.src, 'JPEG', x, y, scaledWidth, scaledHeight);
+          });
+          
+          // 生成PDF blob
+          const pdfBlob = pdf.output('blob');
+          const pdfUrl = URL.createObjectURL(pdfBlob);
+          
+          // 更新下载链接
+          downloadLink.href = pdfUrl;
+          
+          // 隐藏加载状态，显示成功状态和下载按钮
+          loadingSection.classList.add('hidden');
+          successSection.classList.remove('hidden');
+          downloadSection.classList.remove('hidden');
+          
+          // 添加动画效果
+          successSection.classList.add('animate-fadeIn');
+          downloadSection.classList.add('animate-fadeIn');
+          
+        } catch (error) {
+          console.error('生成PDF失败:', error);
+          alert('生成PDF失败，请重试');
+          loadingSection.classList.add('hidden');
+        } finally {
+          // 恢复按钮状态
+          generatePdfBtn.disabled = false;
+          generatePdfBtn.classList.remove('opacity-70', 'cursor-not-allowed');
+        }
+      }, 500);
+    }
+
+    // 页面滚动时改变导航栏样式
+    window.addEventListener('scroll', () => {
+      const header = document.querySelector('header');
+      if (window.scrollY > 10) {
+        header.classList.add('py-2', 'shadow-lg');
+        header.classList.remove('py-4', 'shadow-md');
+      } else {
+        header.classList.add('py-4', 'shadow-md');
+        header.classList.remove('py-2', 'shadow-lg');
+      }
+    });
+
+    // 添加淡入动画
+    document.head.insertAdjacentHTML('beforeend', `
+      <style>
+        @keyframes fadeIn {
+          from { opacity: 0; transform: translateY(10px); }
+          to { opacity: 1; transform: translateY(0); }
+        }
+        .animate-fadeIn {
+          animation: fadeIn 0.3s ease-out forwards;
+        }
+      </style>
+    `);
+  </script>
+</body>
+</html>
